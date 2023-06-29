@@ -33,106 +33,91 @@ ebdb_system_id:             db 'FAT12   '                   ;offset 54 8 bytes
 
 
 
-
 start:
     jmp main
 
-print:
-    push ax
-    push bx
-    push si
-
-.loop:
-    lodsb
-    or al, al
-    jz .done
-
-    mov ah, 0x0e
-    mov bh, 0
-    int 0x10
-
-    jmp .loop
-
-.done:
-    pop si
-    pop bx
-    pop ax
-
-    ret
-    
-main: 
+main:
+;   setup segment registers and stack pointer
     mov ax, 0
+
     mov ds, ax
     mov es, ax
-
     mov ss, ax
-    mov sp, 0x7C00
+    mov sp, 0x7C00      ; stack grows downwards so we set to 7C00(or any lower address) so we dont overwrite code with stack memory
 
-    ; read something from floppy
-    ; bios should set dl to drive number
+    mov dl, [ebdb_drive_num]        ; set drive number
 
-    mov ax, 1               ; lba = 1, second sector of disk
-    mov cl, 1               ; 1 sector to read
-    mov bx, 0x7E00          ; data should be after bootloader
-    call disk_read          
+    mov bx, 0x7E00
+    mov al, 1                       ; LBA = 1; second sector from disk
+    mov cl, 1                       ; 1 sector to read
+    call disk_read
 
     mov si, msg
     call print
 
     cli
-    hlt
+    hlt 
 
-; Error handling function
-floppy_error:
-    mov si, msg_read_failed
-    call print
-    jmp wait_key_and_reboot
 
-wait_key_and_reboot:
-    mov ah, 0
-    int 16h
-    jmp 0FFFFh:0
+; print function prints a string to console
+; parameters
+;   si contains string to print
+print:
+    push ax
+    push bx
 
-.halt
-    cli
-    hlt
+.loop:
+    lodsb                   ; short for: mov al, [si] ; inc si
+    test al, al
+    jz .done
 
-; Converts LBA address to CHS address
-; Parameters:
-;   - ax: LBA address
+    mov ah, 0Eh
+    mov bh, 0h
+    int 10h                 ; For video services AH : 0EH -> teletype output BH -> page number 
+
+    jmp .loop
+
+.done:
+    pop bx
+    pop ax
+
+    ret
+
+; Converts Logical block address to CHS address
+; Parameters: LBA address in AH
 ; Returns:
-;   - cl [bits 0-5]: sector number (upper)
-;   - ch [bits 6-15]: cylinder (lower)
-;   - dh: head
+; DH : head
+; CX : Upper 6 bits is cylinder and lower 2 bits is sector
 lba_to_chs:
     push ax
     push dx
 
-    xor dx, dx          ; dx = 0
-    div word [bdb_num_sector_per_track] ; ax = LBA / SectorPerTrack
-                                        ; dx = LBA % SectorPerTrack
-    inc dx                              ; Sector = (LBA % SectorPerTrack) + 1
-    mov cx, dx                          ; Save sector count
+    xor dx, dx                                      ; dx = 0
+    div word [bdb_num_sector_per_track]             ; AX = LBA / NumSectorPerTrack 
+                                                    ; DX = LBA % NumSectorPerTrack
+    mov cx, dx
+    inc cx                                          ; Sectors = LBA % NumSectorPerTrack + 1
 
-    xor dx, dx
-    div word [bdb_num_heads]            ; cylinder = ax -> (LBA / SectorPerTrack) / HeadsPerCylinder
-                                        ; heads = ax -> (LBA / SectorPerTrack) % HeadsPerCylinder
-    mov dh, dl                          ; upper bits of dx has head value
-    mov ch, al                          ; ch = cylinder 
-    shl ah, 6                           ; shift higher 2 bits
-    or cl, ah                           ; cl has sector number
+    mov dx, ax
+    div word [bdb_num_heads]                        ; Cylinder = AX = (LBA / NumSectorPerTrack) / NumHeadsPerCylinder == LBA / (NumSectorPerTrack * NumHeadsPerCylinder)
+                                                    ; Heads = DX = (LBA / NumSectorPerTrack) % NumHeadsPerCylinder
+    
+    mov dh, dl                                      ; Upper half bits of dx need heads value for bios disk reading
+    mov ch, al
+    shl ah, 6
+    or cl, ah 
 
     pop ax
     mov dl, al
-    pop ax
+    pop ax                                          ; we are only returning cx and dl so ax and dh can be restored
+
     ret
 
-; read sectors from disk
-; parameters:
-;   ax: lba
-;   cl: number of sectors to read
-;   dl: drive number
-;   es:bx: memory address where to store read data
+; calls int 13h to read from disk
+; parameters: 
+;   address of buffer to read in bx
+;   total sector count to read 
+;   dl contains drive number
 disk_read:
     push ax
     push bx
@@ -140,52 +125,55 @@ disk_read:
     push dx
     push di
 
-    push cx                             ; temporarily save number of sectors to read contained in cl
-    call lba_to_chs                     
-    pop ax                              ; save number of sectors to al
+    call lba_to_chs             ; will set ch, cl and dh
 
-    mov ah, 02h
-    mov di, 3                           ; retry count
+    mov di, 3
+    mov ah, 2
 
 .retry:
-    pusha                               ; save all registers since we dont know what registers interrupt will overwrite
-    stc                                 ; set carry flag, some bios dont set it
+    pusha
+    stc
+    int 13h
 
-    int 13h                             ; carry flag cleared = success
+    dec di
     jnc .done
 
+    ; disk read failed
     popa
     call disk_reset
 
-    popa
     test di, di
     jnz .retry
 
-.fail:
     jmp floppy_error
 
 .done:
     popa
-
-    pop ax
-    pop bx
-    pop cx
-    pop dx
+    
     pop di
+    pop dx
+    pop cx
+    pop bx
+    pop ax
 
     ret
 
+floppy_error:
+    mov si, floppy_error_msg
+    call print
+
+    cli
+    hlt
+
 disk_reset:
-    pusha
     mov ah, 0
     stc
     int 13h
     jc floppy_error
-    popa
     ret
 
 msg: db 'Hello world', ENDL, 0
-msg_read_failed: db 'Read from disk failed', ENDL, 0
+floppy_error_msg: db 'Cannot read from floppy', ENDL, 0
 
 times 510-($-$$) db 0
 
