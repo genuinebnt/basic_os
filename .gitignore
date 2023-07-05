@@ -1,1 +1,7 @@
 build
+.vscode
+.gdb_history
+bochs_config
+bx_enh_dbg.ini
+peda*
+text.txt
