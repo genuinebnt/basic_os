@@ -9,7 +9,7 @@ jmp short start ; 2 bytes offset 0
 nop ; 1 byte offset 2
 
 bdb_oem:                    db 'MSWIN4.1' ;offset 3
-bdb_bytes_per_sector:       dw 0200h        ;offset 11
+bdb_bytes_per_sector:       dw 0200h      ;offset 11
 bdb_sector_per_cluster:     db 1          ;offset 13
 bdb_reserved_sectors:       dw 0001h      ;offset 14
 bdb_num_fat:                db 2          ;offset 16
@@ -34,35 +34,69 @@ ebdb_system_id:             db 'FAT12   '                   ;offset 54 8 bytes
 
 
 start:
-    jmp main
-
-main:
 ;   setup segment registers and stack pointer
     mov ax, 0
 
     mov ds, ax
     mov es, ax
+
+    ;setup stack
     mov ss, ax
     mov sp, 0x7C00      ; stack grows downwards so we set to 7C00(or any lower address) so we dont overwrite code with stack memory
 
     mov dl, [ebdb_drive_num]        ; set drive number
 
-    mov bx, 0x7E00
-    mov al, 1                       ; LBA = 1; second sector from disk
-    mov cl, 1                       ; 1 sector to read
+    ; mov si, msg_loading
+    ; call print
+
+    mov ax, [bdb_num_fat]
+    mov bx, [bdb_num_sector_per_fat]
+    mul bx
+    add ax, [bdb_reserved_sectors]  ; ax = reserved_sectors + (fat_count * sectors_per_fat)
+
+    push ax ;   ax = lba of root_dir:  store ax so that we can use it for other calculations
+
+    mov ax, [bdb_num_root_dir_entry]
+    shl ax, 5   ; 1 shift left multiplies by 2
+    add ax, [bdb_bytes_per_sector]  ; entry_size * entry_count + bytes_per_sector
+    dec ax      
+    div bx      ; (entry_size * entry_count + bytes_per_sector - 1) / bytes_per_sector
+
+    mov dl, [ebdb_drive_num]        ; set drive number
+    mov bx, buffer
+    mov cl, al                      ; sectors to read
+    pop ax
     call disk_read
 
-    mov si, msg
+    mov si, buffer
     call print
 
     cli
     hlt 
 
+;
+; Error handling functions
+;
+floppy_error:
+    mov si, floppy_error_msg
+    call print
+
+    jmp wait_key_and_reboot
+
+wait_key_and_reboot:
+    mov ah, 0
+    int 16h
+    jmp 0FFFFh:0
+
+.halt:
+    cli
+    hlt
 
 ; print function prints a string to console
 ; parameters
 ;   si contains string to print
 print:
+    push si
     push ax
     push bx
 
@@ -80,6 +114,7 @@ print:
 .done:
     pop bx
     pop ax
+    pop si
 
     ret
 
@@ -158,13 +193,6 @@ disk_read:
 
     ret
 
-floppy_error:
-    mov si, floppy_error_msg
-    call print
-
-    cli
-    hlt
-
 disk_reset:
     mov ah, 0
     stc
@@ -172,9 +200,12 @@ disk_reset:
     jc floppy_error
     ret
 
-msg: db 'Hello world', ENDL, 0
+
+msg_loading: db 'Loading...', ENDL, 0
 floppy_error_msg: db 'Cannot read from floppy', ENDL, 0
 
 times 510-($-$$) db 0
 
 dw 0xAA55
+
+buffer:
