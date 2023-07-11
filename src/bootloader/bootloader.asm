@@ -44,13 +44,33 @@ start:
     mov ss, ax
     mov sp, 0x7C00      ; stack grows downwards so we set to 7C00(or any lower address) so we dont overwrite code with stack memory
 
-    mov dl, [ebdb_drive_num]        ; set drive number
+    push es
+    push word .after
+    retf
 
-    ; mov si, msg_loading
-    ; call print
+.after:
+    mov [ebdb_drive_num], dl        ; set drive number
 
-    mov ax, [bdb_num_fat]
-    mov bx, [bdb_num_sector_per_fat]
+    mov si, msg_loading
+    call print
+
+ ; instead of relying on data on formatted disk
+    push es
+    mov ah, 08h
+    int 13h
+    jc floppy_error
+    pop es
+
+    and cl, 0x3F                        ; remove top 2 bits
+    xor ch, ch
+    mov [bdb_num_sector_per_track], cx     ; sector count
+
+    inc dh
+    mov [bdb_num_heads], dh                 ; head count
+
+    mov ax, [bdb_num_sector_per_fat]
+    mov bl, [bdb_num_fat] ;
+    xor bh, bh
     mul bx
     add ax, [bdb_reserved_sectors]  ; ax = reserved_sectors + (fat_count * sectors_per_fat)
 
@@ -58,18 +78,101 @@ start:
 
     mov ax, [bdb_num_root_dir_entry]
     shl ax, 5   ; 1 shift left multiplies by 2
-    add ax, [bdb_bytes_per_sector]  ; entry_size * entry_count + bytes_per_sector
-    dec ax      
-    div bx      ; (entry_size * entry_count + bytes_per_sector - 1) / bytes_per_sector
+    xor dx, dx
+    div word [bdb_bytes_per_sector]
+    test dx, dx
+    jz .root_dir_after
+    inc ax
 
+.root_dir_after:
     mov dl, [ebdb_drive_num]        ; set drive number
     mov bx, buffer
     mov cl, al                      ; sectors to read
     pop ax
     call disk_read
 
-    mov si, buffer
-    call print
+    ; search for kernel.bin
+    xor bx, bx
+    mov di, buffer
+
+.search_kernel:
+    mov si, file_kernel_bin
+    mov cx, 11
+    push di
+    repe cmpsb
+    pop di
+    je .found_kernel
+
+    add di, 32
+    inc bx
+    cmp bx, [bdb_num_root_dir_entry]
+    jl .search_kernel
+
+    jmp kernel_not_found_error
+
+.found_kernel:
+    mov ax, [di + 26]
+    mov [kernel_cluster], ax
+
+    mov ax, [bdb_reserved_sectors]
+    mov bx, buffer
+    mov cl, [bdb_num_sector_per_fat]
+    mov dl, [ebdb_drive_num]
+    call disk_read
+
+    mov bx, KERNEL_LOAD_SEGMENT
+    mov es, bx
+    mov bx, KERNEL_LOAD_OFFSET
+
+.load_kernel_loop:
+    ;Read next cluster
+    mov ax, [kernel_cluster]
+    add ax, 31          ; first cluster = (kernel_cluster - 2) * sectors_per_cluster + start_sector
+                        ; start sector = reserved + fats + root directory size = 1 + 18 + 134 = 33
+    mov cl, 1
+    mov dl, [ebdb_drive_num]
+    call disk_read
+
+    add bx, [bdb_bytes_per_sector]
+
+    ; compute location of next cluster
+    mov ax, [kernel_cluster]
+    mov cx, 3
+    mul cx
+    mov cx, 2
+    div cx                  ; ax = index of entry in FAT, dx = cluster mod 2
+
+    mov si, buffer      
+    add si, ax
+    mov ax,  [ds:si]        ; read entry from FAT table at index ax
+
+    or dx, dx
+    jz .even
+
+.odd:
+    shr ax, 4
+    jmp .next_cluster_after
+
+.even:
+    and ax, 0x0FFF
+
+.next_cluster_after:
+    cmp ax, 0x0FF8          ; end of chain
+    jae .read_finish
+
+    mov [kernel_cluster], ax    
+    jmp .load_kernel_loop
+
+.read_finish:
+    mov dl, [ebdb_drive_num]
+
+    mov ax, KERNEL_LOAD_SEGMENT
+    mov ds, ax
+    mov es, ax
+
+    jmp KERNEL_LOAD_SEGMENT:KERNEL_LOAD_OFFSET
+
+    jmp wait_key_and_reboot
 
     cli
     hlt 
@@ -87,6 +190,11 @@ wait_key_and_reboot:
     mov ah, 0
     int 16h
     jmp 0FFFFh:0
+
+kernel_not_found_error:
+    mov si, msg_kernel_not_found
+    call print
+    jmp wait_key_and_reboot
 
 .halt:
     cli
@@ -133,7 +241,7 @@ lba_to_chs:
     mov cx, dx
     inc cx                                          ; Sectors = LBA % NumSectorPerTrack + 1
 
-    mov dx, ax
+    xor dx, dx
     div word [bdb_num_heads]                        ; Cylinder = AX = (LBA / NumSectorPerTrack) / NumHeadsPerCylinder == LBA / (NumSectorPerTrack * NumHeadsPerCylinder)
                                                     ; Heads = DX = (LBA / NumSectorPerTrack) % NumHeadsPerCylinder
     
@@ -160,7 +268,9 @@ disk_read:
     push dx
     push di
 
+    push cx
     call lba_to_chs             ; will set ch, cl and dh
+    pop ax
 
     mov di, 3
     mov ah, 2
@@ -170,13 +280,13 @@ disk_read:
     stc
     int 13h
 
-    dec di
     jnc .done
 
     ; disk read failed
     popa
     call disk_reset
 
+    dec di
     test di, di
     jnz .retry
 
@@ -194,15 +304,23 @@ disk_read:
     ret
 
 disk_reset:
+    pusha
     mov ah, 0
     stc
     int 13h
     jc floppy_error
+    popa
     ret
 
 
 msg_loading: db 'Loading...', ENDL, 0
 floppy_error_msg: db 'Cannot read from floppy', ENDL, 0
+msg_kernel_not_found: db 'Kernel not found', ENDL, 0
+file_kernel_bin: db 'KERNEL  BIN'
+kernel_cluster: dw 0
+
+KERNEL_LOAD_SEGMENT: equ 0x2000
+KERNEL_LOAD_OFFSET: equ 0
 
 times 510-($-$$) db 0
 

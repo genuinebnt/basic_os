@@ -32,6 +32,7 @@ bool read_root_directory(FILE *disk) {
   uint32_t sectorCount = (sizeof(DirEntry) * g_BootSector.DirEntryCount +
                           (g_BootSector.BytesPerSector - 1)) /
                          g_BootSector.BytesPerSector;
+  printf("%d\n", sectorCount);
 
   g_RootDirectoryEnd = rootDirStart + sectorCount;
 

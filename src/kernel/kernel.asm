@@ -1,44 +1,42 @@
-[org 0x7C00]
+[org 0x0]
 [bits 16]
 
-start:
-    jmp main
+%define ENDL 0x0D, 0x0A
 
+
+start:
+    mov si, msg
+    call print
+
+.halt:
+    cli
+    hlt
+    jmp .halt
+
+; print function prints a string to console
+; parameters
+;   si contains string to print
 print:
+    push si
+    push ax
+    push bx
 
 .loop:
-    lodsb
-    or al, al
+    lodsb                   ; short for: mov al, [si] ; inc si
+    test al, al
     jz .done
 
-    mov ah, 0x0e
-    mov bh, 0
-    int 0x10
+    mov ah, 0Eh
+    mov bh, 0h
+    int 10h                 ; For video services AH : 0EH -> teletype output BH -> page number 
 
     jmp .loop
 
 .done:
+    pop bx
+    pop ax
+    pop si
+
     ret
-main: 
-    mov ax, 0
-    mov ds, ax
-    mov es, ax
 
-    mov ss, ax
-    mov sp, 0x7C00
-
-    mov si, msg
-    call print
-
-
-    hlt
-    jmp .halt
-
-.halt:
-    jmp .halt
-
-msg: db 'Hello world', 0
-
-times 510-($-$$) db 0
-
-dw 0xAA55
+msg: db 'Hello Genuine from kernel...', ENDL, 0
