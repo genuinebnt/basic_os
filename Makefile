@@ -4,30 +4,38 @@ CC=gcc
 SRC_DIR=src
 BUILD_DIR=build
 
-.PHONY: all floppy_image bootloader kernel clean always tools_fat
+.PHONY: all floppy_image stage1 stage2 kernel clean always tools_fat
 
 all: tools_fat floppy_image
 
 # floppy image 
 floppy_image: ${BUILD_DIR}/main_floppy.img
 
-${BUILD_DIR}/main_floppy.img: bootloader kernel
+${BUILD_DIR}/main_floppy.img: stage1 stage2 kernel
 	dd if=/dev/zero of=${BUILD_DIR}/main_floppy.img bs=512 count=2880
 	mkfs.fat -F 12 -n "BASICOS" ${BUILD_DIR}/main_floppy.img
-	dd if=${BUILD_DIR}/bootloader.bin of=${BUILD_DIR}/main_floppy.img conv=notrunc
+	dd if=${BUILD_DIR}/stage1.bin of=${BUILD_DIR}/main_floppy.img conv=notrunc
+	mcopy -i ${BUILD_DIR}/main_floppy.img ${BUILD_DIR}/stage2.bin "::stage2.bin"
 	mcopy -i ${BUILD_DIR}/main_floppy.img ${BUILD_DIR}/kernel.bin "::kernel.bin"
-	mcopy -i ${BUILD_DIR}/main_floppy.img text.txt "::text.txt"
-# bootloader
-bootloader: ${BUILD_DIR}/bootloader.bin
 
-${BUILD_DIR}/bootloader.bin: always
-	${ASM} ${SRC_DIR}/bootloader/bootloader.asm -f bin -o ${BUILD_DIR}/bootloader.bin
+# bootloader
+bootloader: stage1 stage2
+
+stage1: ${BUILD_DIR}/stage1.bin
+
+${BUILD_DIR}/stage1.bin:
+	${MAKE} -C ${SRC_DIR}/bootloader/stage1 BUILD_DIR=$(abspath ${BUILD_DIR})
+
+stage2: ${BUILD_DIR}/stage2.bin
+
+${BUILD_DIR}/stage2.bin:
+	${MAKE} -C ${SRC_DIR}/bootloader/stage2 BUILD_DIR=$(abspath ${BUILD_DIR})
 
 # kernel
 kernel: ${BUILD_DIR}/kernel.bin
 
 ${BUILD_DIR}/kernel.bin: always
-	${ASM} ${SRC_DIR}/kernel/kernel.asm -f bin -o ${BUILD_DIR}/kernel.bin
+	${MAKE} -C ${SRC_DIR}/kernel BUILD_DIR=$(abspath ${BUILD_DIR})
 
 tools_fat: ${BUILD_DIR}/tools/fat
 
@@ -40,5 +48,8 @@ always:
 	mkdir -p ${BUILD_DIR}
 
 clean:
-	rm -rf ${BUILD_DIR}
+	${MAKE} -C ${SRC_DIR}/bootloader/stage1 BUILD_DIR=$(abspath ${BUILD_DIR}) clean
+	${MAKE} -C ${SRC_DIR}/bootloader/stage2 BUILD_DIR=$(abspath ${BUILD_DIR}) clean
+	${MAKE} -C ${SRC_DIR}/kernel BUILD_DIR=$(abspath ${BUILD_DIR}) clean
+	rm -rf ${BUILD_DIR}/*
 
