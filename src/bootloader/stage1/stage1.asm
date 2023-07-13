@@ -96,7 +96,7 @@ start:
     mov di, buffer
 
 .search_kernel:
-    mov si, file_kernel_bin
+    mov si, file_stage2_bin
     mov cx, 11
     push di
     repe cmpsb
@@ -112,7 +112,7 @@ start:
 
 .found_kernel:
     mov ax, [di + 26]
-    mov [kernel_cluster], ax
+    mov [stage2_cluster], ax
 
     mov ax, [bdb_reserved_sectors]
     mov bx, buffer
@@ -120,13 +120,13 @@ start:
     mov dl, [ebdb_drive_num]
     call disk_read
 
-    mov bx, KERNEL_LOAD_SEGMENT
+    mov bx, STAGE2_LOAD_SEGMENT
     mov es, bx
-    mov bx, KERNEL_LOAD_OFFSET
+    mov bx, STAGE2_LOAD_OFFSET
 
 .load_kernel_loop:
     ;Read next cluster
-    mov ax, [kernel_cluster]
+    mov ax, [stage2_cluster]
     add ax, 31          ; first cluster = (kernel_cluster - 2) * sectors_per_cluster + start_sector
                         ; start sector = reserved + fats + root directory size = 1 + 18 + 134 = 33
     mov cl, 1
@@ -136,7 +136,7 @@ start:
     add bx, [bdb_bytes_per_sector]
 
     ; compute location of next cluster
-    mov ax, [kernel_cluster]
+    mov ax, [stage2_cluster]
     mov cx, 3
     mul cx
     mov cx, 2
@@ -160,17 +160,17 @@ start:
     cmp ax, 0x0FF8          ; end of chain
     jae .read_finish
 
-    mov [kernel_cluster], ax    
+    mov [stage2_cluster], ax    
     jmp .load_kernel_loop
 
 .read_finish:
     mov dl, [ebdb_drive_num]
 
-    mov ax, KERNEL_LOAD_SEGMENT
+    mov ax, STAGE2_LOAD_SEGMENT
     mov ds, ax
     mov es, ax
 
-    jmp KERNEL_LOAD_SEGMENT:KERNEL_LOAD_OFFSET
+    jmp STAGE2_LOAD_SEGMENT:STAGE2_LOAD_OFFSET
 
     jmp wait_key_and_reboot
 
@@ -192,7 +192,7 @@ wait_key_and_reboot:
     jmp 0FFFFh:0
 
 kernel_not_found_error:
-    mov si, msg_kernel_not_found
+    mov si, msg_stage2_not_found
     call print
     jmp wait_key_and_reboot
 
@@ -315,15 +315,15 @@ disk_reset:
 
 msg_loading: db 'Loading...', ENDL, 0
 floppy_error_msg: db 'Cannot read from floppy', ENDL, 0
-msg_kernel_not_found: db 'Kernel not found', ENDL, 0
-file_kernel_bin: db 'KERNEL  BIN'
-kernel_cluster: dw 0
+msg_stage2_not_found: db 'Stage2 not found', ENDL, 0
+file_stage2_bin: db 'STAGE2  BIN'
+stage2_cluster: dw 0
 
-KERNEL_LOAD_SEGMENT: equ 0x2000
-KERNEL_LOAD_OFFSET: equ 0
+STAGE2_LOAD_SEGMENT: equ 0x2000
+STAGE2_LOAD_OFFSET: equ 0
 
 times 510-($-$$) db 0
 
 dw 0xAA55
-
+    
 buffer:
