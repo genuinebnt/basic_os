@@ -3,5 +3,8 @@
 
 void _cdecl cstart_(uint16_t bootDrive)
 {
-    puts("Hello, world from C!");
+    char letter = 'z';
+    char word[] = "word";
+    int number = 40;
+    printf("Hello world!, %c %s %d hi there", letter, word, number);
 }

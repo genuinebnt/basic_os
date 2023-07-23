@@ -1,1 +1,15 @@
-stdio.c(17): Warning! W138: No newline at end of file
+stdio.c(125): Warning! W102: Type mismatch (warning)
+stdio.c(125): Note! I2003: source conversion type is 'int'
+stdio.c(125): Note! I2004: target conversion type is 'int *'
+stdio.c(130): Warning! W102: Type mismatch (warning)
+stdio.c(130): Note! I2003: source conversion type is 'int'
+stdio.c(130): Note! I2004: target conversion type is 'int *'
+stdio.c(137): Warning! W102: Type mismatch (warning)
+stdio.c(137): Note! I2003: source conversion type is 'int'
+stdio.c(137): Note! I2004: target conversion type is 'int *'
+stdio.c(142): Warning! W102: Type mismatch (warning)
+stdio.c(142): Note! I2003: source conversion type is 'int'
+stdio.c(142): Note! I2004: target conversion type is 'int *'
+stdio.c(222): Warning! W102: Type mismatch (warning)
+stdio.c(222): Note! I2003: source conversion type is 'int *'
+stdio.c(222): Note! I2004: target conversion type is 'int'

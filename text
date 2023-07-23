@@ -1,0 +1,33 @@
+while (*format)
+    {
+        switch (currentState)
+        {
+        case NORMAL:
+            switch (*format)
+            {
+            case '%':
+                currentState = SPECIFIER;
+                break;
+            default:
+                putc(*format);
+                break;
+            }
+            break;
+        case SPECIFIER:
+            switch (*format)
+            {
+            case 'd':
+                print_int(argp);
+                argp++;
+                break;
+            default:
+                putc(*format);
+                currentState = NORMAL;
+                break;
+            }
+            break;
+        default:
+            break;
+        }
+        *format++;
+    }

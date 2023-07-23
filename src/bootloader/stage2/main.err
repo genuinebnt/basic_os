@@ -1,2 +1,5 @@
-main.c(7): Warning! W138: No newline at end of file
+main.c(9): Warning! W131: No prototype found for function 'printf'
+main.c(10): Warning! W138: No newline at end of file
 main.c(4): Warning! W303: Parameter 'bootDrive' has been defined, but not referenced
+main.c(9): Warning! W308: The function 'printf' without prototyped parameters called
+main.c(9): Note! I2002: 'printf' defined in: main.c(9)
